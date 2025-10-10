@@ -1,0 +1,3 @@
+Description,StartDate,StartTime,EndTime,IsRepeat,DaysOfWeek
+Functional Test 5: Drive 1,08/20/2024,9:15,9:45,True,Tuesday
+Functional Test 5: Drive 2,10/10/2024,9:00,13:00,True,Friday

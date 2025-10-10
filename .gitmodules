@@ -1,0 +1,6 @@
+[submodule "/Users/nelsonfigueroa/Documents/Campus_Farm/CampusFarm/connections/mbusd.git"]
+	path = /Users/nelsonfigueroa/Documents/Campus_Farm/CampusFarm/connections/mbusd.git
+	url = https://github.com/3cky/mbusd.git
+[submodule "connected-sdk"]
+	path = connected-sdk
+	url = https://github.com/ianjwhite99/connected-car-python-sdk.git

@@ -1,0 +1,6 @@
+Description	StartDate	StartTime	EndTime	IsRepeat	DaysOfWeek
+To East Quad	10/08/2024	9:00	11:00	TRUE	Monday
+To North Quad	10/09/2024	12:00	13:00	FALSE	
+To West Quad	10/10/2024	14:00	15:00	TRUE	Tuesday
+To South Quad	10/01/2024	9:00	12:00	TRUE	Tuesday
+12e1r3f4f	09/01/2024	20:00	22:00	TRUE	Tuesday

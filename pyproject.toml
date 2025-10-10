@@ -1,0 +1,23 @@
+[project]
+name = "campusfarm"
+version = "0.1.0"
+description = "Libraries for campusfarm repository"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "chromedriver-autoinstaller>=0.6.4",
+    "cvxpy>=1.7.3",
+    "dotenv>=0.9.9",
+    "flask>=3.1.2",
+    "from-root>=1.3.0",
+    "matplotlib>=3.10.6",
+    "numpy>=2.3.3",
+    "pandas>=2.3.3",
+    "pillow>=11.3.0",
+    "pytz>=2025.2",
+    "requests>=2.32.5",
+    "selenium>=4.35.0",
+    "undetected-chromedriver>=3.5.5",
+]
+[tool.pyright]
+typeCheckingMode = "off"

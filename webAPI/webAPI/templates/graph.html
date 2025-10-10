@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Series Line Chart with D3.js</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+  </head>
+  <body>
+    <div id="chart-container"></div>
+    <script>
+        // Fetch data from API
+        let extractData = [];
+        async function fetchData() {
+            const response = await fetch('http://localhost:8000/api/datas/', { 
+                method: 'GET', 
+                mode:"cors", 
+            });
+            const data = await response.json();
+            // Form specific data formation
+            extractData = data.line_data;
+            console.log(extractData);
+            const chart = drawChart();
+            document.getElementById("chart-container").appendChild(chart);
+        }
+
+        // Function to draw the chart
+        function drawChart() {
+            // Specify the chart's dimensions.
+            const width = 928;
+            const height = 600;
+            const marginTop = 20;
+            const marginRight = 20;
+            const marginBottom = 30;
+            const marginLeft = 30;
+
+            // Create the positional scales.
+            extractData.forEach(d => {
+                d.date = new Date(d.date);
+            });
+
+            // For better mock visualization, can be delete later.
+            extractData.sort((a, b) => a.date - b.date);
+
+            const x = d3.scaleUtc()
+                .domain(d3.extent(extractData, d => d.date))
+                .range([marginLeft, width - marginRight]);
+            
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(extractData, d => d.value)]).nice()
+                .range([height - marginBottom, marginTop]);
+            
+            // Create the SVG container.
+            const svg = d3.create("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .attr("viewBox", [0, 0, width, height])
+                .attr("style", "max-width: 100%; height: auto; overflow: visible; font: 15px sans-serif;")
+            
+            // Add the horizontal axis.
+            svg.append("g")
+                .attr("transform", `translate(${marginLeft},0)`)
+                .call(d3.axisLeft(y))
+                .call(g => g.select(".domain").remove())
+                .call(g => g.selectAll(".tick line").clone()
+                    .attr("x2", width - marginLeft - marginRight)
+                    .attr("stroke-opacity", 0.1))
+                .call(g => g.append("text")
+                    .attr("x", -marginLeft)
+                    .attr("y", 10)
+                    .attr("fill", "currentColor")
+                    .attr("text-anchor", "start")
+                    .text("↑ Carbon Emission (lbs)"));
+            
+            const xAxis = d3.axisBottom(x)
+                            .ticks(d3.utcMonth)
+                            .tickFormat(d3.utcFormat("%B %Y"))
+
+            // Add the X-axis
+            svg.append("g")
+                .attr("transform", `translate(0,${height - marginBottom})`)
+                .call(xAxis)
+                .call(g => g.select(".domain").remove())
+                .call(g => g.selectAll(".tick line").clone()
+                    .attr("y2", -height + marginTop + marginBottom)
+                    .attr("stroke-opacity", 0.1))
+                .call(g => g.append("text")
+                    .attr("x", width - marginLeft)
+                    .attr("y", height - marginTop + 10)
+                    .attr("fill", "currentColor")
+                    .attr("text-anchor", "end")
+                    .text("→ Date"));
+
+            // Add a dot for each data point.
+            svg.append("g")
+               .attr("fill", "currentColor")
+               .attr("display", "none")
+
+            // Avoid small granularity of dates data.
+            const jitterAmount = (x.range()[1] - x.range()[0]) * 0.02
+            
+            // Compute the points in pixel space as [x, y, z], where z is the name of the series.
+            const points = extractData.map((d) => {
+                const point = [x(d.date)+ (Math.random() - 0.5) * jitterAmount, y(d.value), d.division];
+                console.log(point);
+                console.log(d.date);
+                return point;
+            })
+
+            // Group the points by series.
+            const groups = d3.rollup(points, v => Object.assign(v, {z: v[0][2]}), d => d[2]);
+
+            // Draw the lines.
+            const line = d3.line();
+            const path = svg.append("g")
+                .attr("fill", "none")
+                .attr("stroke", "steelblue")
+                .attr("stroke-width", 1.5)
+                .attr("stroke-linejoin", "round")
+                .attr("stroke-linecap", "round")
+            .selectAll("path")
+            .data(groups.values())
+            .join("path")
+                .style("mix-blend-mode", "multiply")
+                .attr("d", line);
+
+            // Utility function
+            function pointermoved(event) {
+                const [xm, ym] = d3.pointer(event);
+                const i = d3.leastIndex(points, ([x, y]) => Math.hypot(x - xm, y - ym));
+                const [x, y, k] = points[i];
+                path.style("stroke", ({z}) => z === k ? null : "#add").filter(({z}) => z === k).raise();
+                dot.attr("transform", `translate(${x},${y})`);
+                dot.select("text").text(k);
+                svg.property("value", extractData[i]).dispatch("input", {bubbles: true});
+            }
+
+            function pointerentered() {
+                path.style("mix-blend-mode", null).style("stroke", "#ddd");
+                dot.attr("display", null);
+            }
+
+            function pointerleft() {
+                path.style("mix-blend-mode", "multiply").style("stroke", null);
+                dot.attr("display", "none");
+                svg.node().value = null;
+                svg.dispatch("input", {bubbles: true});
+            }
+            
+            // Add the invisible layer for the interactive tip.
+            const dot = svg.append("g")
+                .attr("display", "none");
+
+            dot.append("circle")
+                .attr("r", 2.5);
+
+            dot.append("text")
+                .attr("text-anchor", "middle")
+                .attr("y", -8);
+
+            svg
+                .on("pointerenter", pointerentered)
+                .on("pointermove", pointermoved)
+                .on("pointerleave", pointerleft)
+                .on("touchstart", event => event.preventDefault());
+
+            return svg.node();
+        }
+
+        // Create and draw the chart
+        fetchData();
+    </script>
+  </body>
+</html>

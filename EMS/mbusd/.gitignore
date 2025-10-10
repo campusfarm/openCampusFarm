@@ -1,0 +1,11 @@
+/.settings
+*.log
+*.conf
+*.pyc
+/.idea
+/.vscode
+.project
+.cproject
+.pydevproject
+/build
+build.sh
