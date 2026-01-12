@@ -106,6 +106,8 @@ We would like to express our gratitude to everyone who contributed to the succes
 - **Xinyi Xu**.
 - **Nathan Newman**.  
 - **Tongyuan Miao**.
+- **Charlotte Ma**.
+- **Trisina Simanjuntak**.
 
 ### Mentors  
 - **Johanna Mathieu**.  
