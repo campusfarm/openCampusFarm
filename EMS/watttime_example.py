@@ -40,18 +40,22 @@ def get_moer(token):
     url = "https://api.watttime.org/v3/forecast"
 
     # Provide your TOKEN here, see https://docs.watttime.org/#tag/Authentication/operation/get_token_login_get for more information
-    TOKEN = ""
+    #TOKEN = ""
     headers = {"Authorization": f"Bearer {token}"}
     params = {
         "region": "MISO_DETROIT",
         "signal_type": "co2_moer",
     }
     response = requests.get(url, headers=headers, params=params)
+    print("STATUS:", response.status_code)
+    print("HEADERS:", dict(response.headers))
+    print("BODY:", response.text[:1000])
     response.raise_for_status()
     return response.json()
 
+
 token = get_login_token()
-#print(token)
+print(token)
 data = get_moer(token)
 #print(data)
 time = []

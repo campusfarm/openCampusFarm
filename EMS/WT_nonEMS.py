@@ -27,40 +27,40 @@ normal_periods = []
 
 real_time = datetime.now()
 
-def perform_action_based_on_next_delivery():
-    try:
-        global min_time_difference
-        global hours_difference
+# def perform_action_based_on_next_delivery():
+#     try:
+#         global min_time_difference
+#         global hours_difference
 
-        schedule = read_schedule_from_csv(filepath)
-        current_time = datetime.now(DETROIT_TIMEZONE)
-        # Find the next delivery
-        next_delivery, next_delivery_time, min_time_difference = get_next_delivery(schedule, current_time)
-        hours_difference = min_time_difference.total_seconds() / 3600  # Convert to hours
-        hours_difference = math.floor(hours_difference)  # Get the floored value
-        return hours_difference
-    except Exception as e:
-        print(f"An error occurred with perform_action_based_on_next_delivery: {e}")
+#         schedule = read_schedule_from_csv(filepath)
+#         current_time = datetime.now(DETROIT_TIMEZONE)
+#         # Find the next delivery
+#         next_delivery, next_delivery_time, min_time_difference = get_next_delivery(schedule, current_time)
+#         hours_difference = min_time_difference.total_seconds() / 3600  # Convert to hours
+#         hours_difference = math.floor(hours_difference)  # Get the floored value
+#         return hours_difference
+#     except Exception as e:
+#         print(f"An error occurred with perform_action_based_on_next_delivery: {e}")
 
-perform_action_based_on_next_delivery()
+# perform_action_based_on_next_delivery()
 
 def get_current_time():
     print(real_time)
     return real_time
 
-def make_account():
+# def make_account():
     
-    # To register, use the code below. Please note that for these code examples we are using filler values for username
-    # (freddo), password (the_frog), email (freddo@frog.org), org (freds world) and you should replace each if you are
-    # copying and pasting this code.
+#     # To register, use the code below. Please note that for these code examples we are using filler values for username
+#     # (freddo), password (the_frog), email (freddo@frog.org), org (freds world) and you should replace each if you are
+#     # copying and pasting this code.
 
-    import requests
-    register_url = 'https://api.watttime.org/register'
-    params = {'username': os.environ.get("WT_USERNAME"),
-            'password': os.environ.get("WT_PASSWORD"),
-            'email': os.environ.get("WT_EMAIL"),
-            'org': os.environ.get("WT_ORG")}
-    rsp = requests.post(register_url, json=params)
+#     import requests
+#     register_url = 'https://api.watttime.org/register'
+#     params = {'username': os.environ.get("WT_USERNAME"),
+#             'password': os.environ.get("WT_PASSWORD"),
+#             'email': os.environ.get("WT_EMAIL"),
+#             'org': os.environ.get("WT_ORG")}
+#     rsp = requests.post(register_url, json=params)
     # print(rsp.text)
 
 def get_login_token():
@@ -107,20 +107,7 @@ def get_moer(token):
     response.raise_for_status()
     return response.json()
 
-token = get_login_token()
-# print(token)
-pre_data = get_moer(token)
 
-data = []
-for entry in pre_data['data']:
-    original_time = datetime.fromisoformat(entry['point_time'])  # Parse the point_time
-    adjusted_time = original_time - timedelta(hours=5)  # Subtract 5 hours
-    data.append({
-        "point_time": adjusted_time.isoformat(),
-        "value": entry['value']
-    })
-
-# print(data)
 
 def generate_clean_periods(num_time_slots_wanted):
     try:
@@ -150,6 +137,58 @@ def generate_clean_periods(num_time_slots_wanted):
         print(len(selected_slots))
     except Exception as e:
         print(f"An error occurred with generate_clean_periods: {e}")
+
+# def generate_clean_periods(clean_bar, merge_adjacent=True):
+#     """
+#     Build clean_periods based on MOER threshold (clean_bar).
+#     Any 5-min slot with value <= clean_bar is considered clean.
+
+#     Args:
+#         clean_bar (float): MOER threshold. Example: 250 (lbs/MWh) or whatever unit your WT returns.
+#         merge_adjacent (bool): If True, merge consecutive clean 5-min slots into longer intervals.
+#     """
+#     try:
+#         global data
+#         global TIMEZONE
+#         global clean_periods
+#         global normal_periods
+
+#         # Parse times + values (keep original order)
+#         slots = []
+#         for entry in data:
+#             v = entry["value"]
+#             t0 = datetime.fromisoformat(entry["point_time"]).astimezone(TIMEZONE)
+#             t1 = t0 + timedelta(minutes=5)
+#             slots.append((v, t0, t1))
+
+#         # All periods (normal) in original order
+#         normal_periods = [(t0.isoformat(), t1.isoformat()) for (v, t0, t1) in slots]
+
+#         # Threshold filter (no sorting)
+#         clean_raw = [(t0, t1) for (v, t0, t1) in slots if v <= clean_bar]
+
+#         # Optionally merge adjacent clean slots into continuous intervals
+#         if merge_adjacent:
+#             clean_periods_dt = []
+#             if clean_raw:
+#                 cur_start, cur_end = clean_raw[0]
+#                 for (s, e) in clean_raw[1:]:
+#                     # adjacent if next starts exactly when current ends
+#                     if s == cur_end:
+#                         cur_end = e
+#                     else:
+#                         clean_periods_dt.append((cur_start, cur_end))
+#                         cur_start, cur_end = s, e
+#                 clean_periods_dt.append((cur_start, cur_end))
+
+#             clean_periods = [(s.isoformat(), e.isoformat()) for (s, e) in clean_periods_dt]
+#         else:
+#             clean_periods = [(s.isoformat(), e.isoformat()) for (s, e) in clean_raw]
+
+#         print(f"Clean bar = {clean_bar}. Clean intervals = {len(clean_periods)}")
+
+#     except Exception as e:
+#         print(f"An error occurred with generate_clean_periods: {e}")
 
 def plot_clean_periods(clean_periods, values, times):
     """
@@ -202,8 +241,28 @@ def save_nonEMS_charging_periods(filename="ev_nonEMS_charging_periods.json"):
     except Exception as e:
         print(f"An error occurred with save_nonEMS_charging_periods: {e}")
 
+token = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzY29wZSI6Ik5PTkUiLCJpYXQiOjE3NzEyMjI5NjYsImV4cCI6MTc3MTIyNDc2NiwiaXNzIjoiV2F0dFRpbWUiLCJzdWIiOiJDRi1FTVMtYWRtaW5AdW1pY2guZWR1In0.QhEyfb-Q7hQmgNRJb0mTRV0QuCgF5bqLhFqiptPuU7i98hgz-NLkZ3zyH9w9ftC_xmwOVFdX37E4mxusAQD0gFzQLGwnyY2rIfWwjtTg4kG1dgsWS2suhw3bq1TDnhC6sYI8LF1XEBPlf9rjfiPl_GauxJX1A6EiQF1g_Q713qyv6U4N3paCSid_wMCk3dE2ia2idfBSi8DgaWgQvq4ToC9Gsko5YqOCw8Ma45_l_hXA8HPI77kxxy9JFZP7xuvRv3bCF0bpL5rY7CUDDP4frjwG73mPRXAOdvENuAPs9JLn6tPZLU0HB6iZG6de4QEsnsmr_v_vO43Ep9-kyQZsLA'
+
+# choose a horizon (hours). If you don’t have delivery logic yet, just use 24.
+horizon = 24
+
+pre_data = get_moer(token)
+
+# build data list in UTC (keep UTC consistent everywhere)
+data = [{"point_time": e["point_time"], "value": e["value"]} for e in pre_data["data"]]
+print(data)
+# extract series for plotting
+values = [e["value"] for e in data]
+times = [datetime.fromisoformat(e["point_time"]).astimezone(TIMEZONE) for e in data]
+
+# pick threshold (example: median = 50th percentile; you can change to 20 for “cleanest 20%”)
+clean_bar = np.percentile(values, 50)
+
 generate_clean_periods(29)
-# # Save the clean periods
+
+# plot + save
+plot_clean_periods(clean_periods, values, times)
+
 save_clean_periods()
 save_nonEMS_charging_periods()
 

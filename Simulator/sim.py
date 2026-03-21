@@ -379,7 +379,7 @@ if __name__ == "__main__":
             if (power_type == PowerState.COMBO):
                 print("The system is using both PV power and Grid power Cooler Power Load is ", main_cooler.instant_power())
             elif (power_type == PowerState.OFF_GRID):
-                print("The systm is using PV power only! Cooler Power Load is ", main_cooler.instant_power())
+                print("The system is using PV power only! Cooler Power Load is ", main_cooler.instant_power())
             elif (power_type == PowerState.GRID_SUPPORT):
                 print("The system is using Grid power only! Cooler Power Load is ", main_cooler.instant_power())
             pv.state = power_type

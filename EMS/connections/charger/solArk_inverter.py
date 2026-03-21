@@ -31,12 +31,12 @@ def get_inverter_data():
         email_field = WebDriverWait(driver, 60).until(
             EC.presence_of_element_located((By.XPATH, "//input[@placeholder='Please input your E-mail']"))
         )
-        email_field.send_keys(os.environ.get("SOLARKCLOUD_EMAIL"))
+        email_field.send_keys(os.environ.get("SOLARK_EMAIL"))
 
         password_field = WebDriverWait(driver, 60).until(
             EC.presence_of_element_located((By.XPATH, "//input[@placeholder='Please re-enter password']"))
         )
-        password_field.send_keys(os.environ.get("SOLARKCLOUD_PASSWORD"))
+        password_field.send_keys(os.environ.get("SOLARK_PASSWORD"))
 
         checkbox = driver.find_element(By.CLASS_NAME, "el-checkbox__input")
         checkbox.click()  # Click the checkbox
