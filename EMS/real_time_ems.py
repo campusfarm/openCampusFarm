@@ -15,7 +15,7 @@ import re
 from astral import LocationInfo
 from astral.sun import sun 
 from connections.charger.solArk_inverter import get_inverter_data
-from automation import change_setpoint, get_coolbot_temp, get_sensor_temp
+from coolbot import change_setpoint, get_coolbot_temp, get_sensor_temp
 from connections.charger.enphase_automation import charger_on, charger_off, plugged_in_and_charging
 from connections.charger.get_charger_consumption import get_miles_added
 from connections.ev_battery import check_battery
