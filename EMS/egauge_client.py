@@ -1,6 +1,4 @@
-# egauge_client.py
 import hashlib
-import json
 import os
 from datetime import datetime, timedelta
 from functools import lru_cache

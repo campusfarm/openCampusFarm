@@ -191,14 +191,59 @@ def change_setpoint(updated_value: int) -> None:
         print(f"An error occurred in coolbot/change_setpoint function:\n {e}")
 
 
-def get_coolbot_temp() -> float:
-    """Read current CoolBot temperature.
+async def readCoolbot(pin: int = PIN_SET_TEMP) -> float | None:
+    """Fetch the last-written value for a virtual pin from the dashboard's pinsStorage.
 
-    NOTE: Temperature reading via the Blynk WebSocket protocol is not yet
-    implemented. Returns None; callers should handle this gracefully.
+    The server caches every vw write in pinsStorage keyed as "{device_id}-v{pin}",
+    so no vr round-trip to the hardware is needed.
     """
-    print("get_coolbot_temp: not implemented for WebSocket backend, returning None")
-    return None
+    async with websockets.connect(BLYNK_URL) as ws:
+        if not await blynk_login(ws):
+            raise RuntimeError("Coolbot login failed")
+
+        await ws.send(PING_PACKET)
+
+        while True:
+            raw = await ws.recv()
+            data = raw if isinstance(raw, bytes) else raw.encode()
+            parsed = parse_packet(data)
+            cmd = parsed.get("command")
+
+            if cmd == CMD_PING:
+                await ws.send(build_response_packet(parsed["msg_id"], 200))
+
+            elif cmd == CMD_LOAD_PROFILE_GZIPPED:
+                profile = parsed.get("profile")
+                if not profile:
+                    raise RuntimeError(
+                        f"Failed to load profile: {parsed.get('decompress_error')}"
+                    )
+                dashboards = profile.get("dashBoards", [])
+                if not dashboards:
+                    raise RuntimeError("No dashboards found in profile")
+                devices = dashboards[0].get("devices", [])
+                device_id = devices[0]["id"] if devices else 0
+
+                pins_storage = dashboards[0].get("pinsStorage", {})
+                key = f"{device_id}-v{pin}"
+                raw_value = pins_storage.get(key)
+                if raw_value is None:
+                    raise RuntimeError(
+                        f"Pin {pin} not found in pinsStorage (key={key!r})"
+                    )
+                try:
+                    return float(raw_value)
+                except ValueError:
+                    return raw_value
+
+
+def get_coolbot_temp() -> float | None:
+    """Read the current CoolBot set temperature via WebSocket."""
+    try:
+        return asyncio.run(readCoolbot(PIN_SET_TEMP))
+    except Exception as e:
+        print(f"An error occurred in coolbot/get_coolbot_temp function:\n {e}")
+        return None
 
 
 def get_sensor_temp() -> float:
