@@ -1,7 +1,6 @@
 import hashlib
 import os
 from datetime import datetime, timedelta
-from functools import lru_cache
 from secrets import token_hex
 
 import requests

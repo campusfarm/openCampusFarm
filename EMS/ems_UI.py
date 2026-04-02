@@ -1,26 +1,24 @@
-import tkinter as tk
+import csv
+import json
+import os
+import subprocess
 import threading
 import time
+import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox
-import json
-import subprocess
-# import currentWattTime as wt
-import csv
-import os
-
 
 current_temperature = 55.0
 tmin = 51.0
 tmax = 59.0
 coolth = 35.0
 econ = 48.0
-tolerance_time = 40 #min 
-current_mode = "Rule-Based" 
+tolerance_time = 40  # min
+current_mode = "Rule-Based"
 current_charge_setpoint = 70.0
 global realtime_charge
 global realtime_MOER
-global realtime 
+global realtime
 realtime = datetime.now()
 
 # realtime_MOER = wt.get_current_wattT()
@@ -29,35 +27,45 @@ realtime_charge = 0.0
 tasks = []
 
 
-def load_tasks_from_csv(file_name='weeklySchedule.csv'):
+def load_tasks_from_csv(file_name="weeklySchedule.csv"):
     tasks = []
     try:
-        with open(file_name, mode='r') as file:
+        with open(file_name, mode="r") as file:
             reader = csv.DictReader(file)
             for row in reader:
                 task = {
-                    'description': row['Description'],
-                    'start_date': datetime.strptime(row['StartDate'], "%m/%d/%Y"),
-                    'time': row['StartTime'],
-                    'endTime': row['EndTime'],
-                    'is_repeat': row['IsRepeat'] == 'True',
+                    "description": row["Description"],
+                    "start_date": datetime.strptime(row["StartDate"], "%m/%d/%Y"),
+                    "time": row["StartTime"],
+                    "endTime": row["EndTime"],
+                    "is_repeat": row["IsRepeat"] == "True",
                     # 'days': row['DaysOfWeek'].split(', ') if row['DaysOfWeek'] else [],
-                    'days': [day.strip() for day in row['DaysOfWeek'].split(',')] if row['DaysOfWeek'] else [],
-                    'last_executed': None
+                    "days": [day.strip() for day in row["DaysOfWeek"].split(",")]
+                    if row["DaysOfWeek"]
+                    else [],
+                    "last_executed": None,
                 }
                 tasks.append(task)
     except FileNotFoundError:
         print("No schedule file found, starting with an empty task list.")
     return tasks
 
-def save_tasks_to_csv(tasks, file_name='weeklySchedule.csv'):
+
+def save_tasks_to_csv(tasks, file_name="weeklySchedule.csv"):
     try:
         print("Saving the following tasks to CSV:")
         for task in tasks:
             print(task)  # Print each task to verify the data before saving
 
-        with open(file_name, mode='w', newline='') as file:
-            fieldnames = ['Description', 'StartDate', 'StartTime', 'EndTime', 'IsRepeat', 'DaysOfWeek']
+        with open(file_name, mode="w", newline="") as file:
+            fieldnames = [
+                "Description",
+                "StartDate",
+                "StartTime",
+                "EndTime",
+                "IsRepeat",
+                "DaysOfWeek",
+            ]
             writer = csv.DictWriter(file, fieldnames=fieldnames)
 
             # Write the header
@@ -65,44 +73,49 @@ def save_tasks_to_csv(tasks, file_name='weeklySchedule.csv'):
 
             # Write each task back to the CSV
             for task in tasks:
-                writer.writerow({
-                    'Description': task['description'],
-                    'StartDate': task['start_date'].strftime("%m/%d/%Y"),
-                    'StartTime': task['time'],
-                    'EndTime': task['endTime'],
-                    'IsRepeat': 'True' if task['is_repeat'] else 'False',
-                    'DaysOfWeek': ', '.join(task['days'])
-                })
+                writer.writerow(
+                    {
+                        "Description": task["description"],
+                        "StartDate": task["start_date"].strftime("%m/%d/%Y"),
+                        "StartTime": task["time"],
+                        "EndTime": task["endTime"],
+                        "IsRepeat": "True" if task["is_repeat"] else "False",
+                        "DaysOfWeek": ", ".join(task["days"]),
+                    }
+                )
     except Exception as e:
         print(f"Error saving tasks to CSV: {e}")
+
 
 # Add a function to read walking steps from a JSON file
 def update_realtime_charge():
     global realtime_charge
     while True:
         try:
-            with open('charge_data.json', 'r') as file:
+            with open("charge_data.json", "r") as file:
                 data = json.load(file)
-                realtime_charge = data['charge']  # Simulate charge being walking steps
+                realtime_charge = data["charge"]  # Simulate charge being walking steps
         except FileNotFoundError:
             realtime_charge = 0.0  # If file doesn't exist, set to 0
         time.sleep(1)
 
+
 def fetch_and_update_charge_label(realtime_charge_label):
     # Fetch the latest steps and update the label
 
-
     realtime_charge_label.config(text=f"Current Charge: {realtime_charge} %")
     # Schedule the next update after 1000 milliseconds (1 second)
-    realtime_charge_label.after(1000, fetch_and_update_charge_label, realtime_charge_label)
-        
+    realtime_charge_label.after(
+        1000, fetch_and_update_charge_label, realtime_charge_label
+    )
+
+
 # def fetch_and_update_MOER_label(current_MOER_label):
 #     realtime_MOER = wt.get_current_wattT()
 #     current_MOER_label.config(text=f"Current MOER: {realtime_MOER} lbs CO2/MWh at {datetime.now()}")
 #     current_MOER_label.after(60000, fetch_and_update_MOER_label, current_MOER_label)
 
 
-     
 def open_temp_setting():
     def reset_temperature():
         global current_temperature
@@ -113,8 +126,10 @@ def open_temp_setting():
             if temp_entry.get():
                 new_temp = float(temp_entry.get())
                 current_temperature = new_temp
-                current_temp_label.config(text=f"Current Temperature Setpoint: {current_temperature}°F")
-            
+                current_temp_label.config(
+                    text=f"Current Temperature Setpoint: {current_temperature}°F"
+                )
+
             # Update Tmin
             if tmin_entry.get():
                 new_tmin = float(tmin_entry.get())
@@ -131,7 +146,9 @@ def open_temp_setting():
             if coolth_entry.get():
                 new_coolth = float(coolth_entry.get())
                 coolth = new_coolth
-                current_coolth_label.config(text=f"Current Coolth Setpoint : {coolth}°F")
+                current_coolth_label.config(
+                    text=f"Current Coolth Setpoint : {coolth}°F"
+                )
 
             # Update Econ
             if econ_entry.get():
@@ -139,11 +156,13 @@ def open_temp_setting():
                 econ = new_econ
                 current_econ_label.config(text=f"Current Econ Setpoint: {econ}°F")
 
-            # Update tolerance Time 
+            # Update tolerance Time
             if tolerance_entry.get():
                 new_tolerance = float(tolerance_entry.get())
                 tolerance_time = new_tolerance
-                current_tolerance_label.config(text=f"Current Coolth/Econ Tolerance Time: {tolerance_time}min")
+                current_tolerance_label.config(
+                    text=f"Current Coolth/Econ Tolerance Time: {tolerance_time}min"
+                )
 
             # Clear all entry fields
             temp_entry.delete(0, tk.END)
@@ -162,7 +181,9 @@ def open_temp_setting():
     temp_window.geometry("300x600")
 
     # Current Temperature
-    current_temp_label = tk.Label(temp_window, text=f"Current Temperature Setpoint: {current_temperature}°F")
+    current_temp_label = tk.Label(
+        temp_window, text=f"Current Temperature Setpoint: {current_temperature}°F"
+    )
     current_temp_label.pack(pady=5)
     temp_label = tk.Label(temp_window, text="Reset Current Temperature:")
     temp_label.pack()
@@ -186,7 +207,9 @@ def open_temp_setting():
     tmax_entry.pack(pady=5)
 
     # Current coolth
-    current_coolth_label = tk.Label(temp_window, text=f"Current Coolth Setpoint: {coolth}°F")
+    current_coolth_label = tk.Label(
+        temp_window, text=f"Current Coolth Setpoint: {coolth}°F"
+    )
     current_coolth_label.pack(pady=5)
     coolth_label = tk.Label(temp_window, text="Reset Coolth Setpoint:")
     coolth_label.pack()
@@ -201,19 +224,20 @@ def open_temp_setting():
     econ_entry = tk.Entry(temp_window)
     econ_entry.pack(pady=5)
 
-    # Current tolerance 
-    current_tolerance_label = tk.Label(temp_window, text=f"Current Coolth/Econ Tolerance Time: {tolerance_time} min")
+    # Current tolerance
+    current_tolerance_label = tk.Label(
+        temp_window, text=f"Current Coolth/Econ Tolerance Time: {tolerance_time} min"
+    )
     current_tolerance_label.pack(pady=5)
     tolerance_label = tk.Label(temp_window, text="Reset To:")
     tolerance_label.pack()
     tolerance_entry = tk.Entry(temp_window)
     tolerance_entry.pack(pady=5)
 
-
-
     # Reset Button
     reset_temp_button = tk.Button(temp_window, text="Save", command=reset_temperature)
     reset_temp_button.pack(pady=10)
+
 
 def open_charging_setting():
     def reset_charge():
@@ -221,12 +245,16 @@ def open_charging_setting():
         global realtime_charge
         try:
             new_charge = float(charge_entry.get())
-            current_charge_setpoint= new_charge
+            current_charge_setpoint = new_charge
             # Update the displayed current temperature
-            current_charge_label.config(text=f"Current Charge Setpoint: {current_charge_setpoint}%")
+            current_charge_label.config(
+                text=f"Current Charge Setpoint: {current_charge_setpoint}%"
+            )
             # Clear the entry field
             charge_entry.delete(0, tk.END)
-            messagebox.showinfo("Success", f"Charge reset to {current_charge_setpoint}%.")
+            messagebox.showinfo(
+                "Success", f"Charge reset to {current_charge_setpoint}%."
+            )
         except ValueError:
             messagebox.showerror("Invalid Input", "Please enter a valid number.")
 
@@ -235,7 +263,9 @@ def open_charging_setting():
     charge_window.geometry("300x300")
 
     # Current Charge Label
-    current_charge_label = tk.Label(charge_window, text=f"Current Charge Setpoint: {current_charge_setpoint}%")
+    current_charge_label = tk.Label(
+        charge_window, text=f"Current Charge Setpoint: {current_charge_setpoint}%"
+    )
     current_charge_label.pack(pady=10)
 
     # Realtime charge
@@ -253,7 +283,7 @@ def open_charging_setting():
 
     # Reset Temperature Button
     reset_charge_button = tk.Button(charge_window, text="Save", command=reset_charge)
-    reset_charge_button.pack(pady=10) 
+    reset_charge_button.pack(pady=10)
 
 
 def manage_delivery():
@@ -279,7 +309,9 @@ def manage_delivery():
         try:
             start_date = datetime.strptime(date_str, "%m/%d/%Y")
         except ValueError:
-            messagebox.showerror("Invalid Date Format", "Please enter the date in MM/DD/YYYY format.")
+            messagebox.showerror(
+                "Invalid Date Format", "Please enter the date in MM/DD/YYYY format."
+            )
             return
 
         if not time_str:
@@ -295,22 +327,27 @@ def manage_delivery():
             datetime.strptime(time_str, "%H:%M")
             datetime.strptime(time_str2, "%H:%M")
         except ValueError:
-            messagebox.showerror("Invalid Time Format", "Please enter the time in HH:MM (24-hour) format.")
+            messagebox.showerror(
+                "Invalid Time Format",
+                "Please enter the time in HH:MM (24-hour) format.",
+            )
             return
 
         if is_repeat and not selected_days:
-            messagebox.showwarning("Input Error", "Please select at least one day for the repeating task.")
+            messagebox.showwarning(
+                "Input Error", "Please select at least one day for the repeating task."
+            )
             return
 
         # Create a task dictionary
         task = {
-            'description': task_desc,
-            'is_repeat': is_repeat,
-            'start_date': start_date,
-            'time': time_str,
-            'endTime': time_str2,
-            'days': selected_days,
-            'last_executed': None  # Initialize last executed time
+            "description": task_desc,
+            "is_repeat": is_repeat,
+            "start_date": start_date,
+            "time": time_str,
+            "endTime": time_str2,
+            "days": selected_days,
+            "last_executed": None,  # Initialize last executed time
         }
 
         tasks.append(task)
@@ -336,8 +373,8 @@ def manage_delivery():
     def update_task_list():
         task_listbox.delete(0, tk.END)
         for idx, task in enumerate(tasks):
-            days_str = ', '.join(task['days']) if task['days'] else 'No days selected'
-            repeat_str = 'Repeats' if task['is_repeat'] else 'One-time'
+            days_str = ", ".join(task["days"]) if task["days"] else "No days selected"
+            repeat_str = "Repeats" if task["is_repeat"] else "One-time"
             task_str = f"{task['start_date'].strftime('%m/%d/%Y')} {task['time']} - {task['endTime']} : {task['description']} [{repeat_str} on {days_str}]"
 
             # Add to main task list
@@ -352,8 +389,7 @@ def manage_delivery():
     scrollable_frame = tk.Frame(canvas)
 
     scrollable_frame.bind(
-        "<Configure>",
-        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
     )
 
     canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
@@ -370,7 +406,9 @@ def manage_delivery():
     all_tasks_frame.pack()
 
     task_scrollbar = tk.Scrollbar(all_tasks_frame, orient=tk.VERTICAL)
-    task_listbox = tk.Listbox(all_tasks_frame, width=50, height=15, yscrollcommand=task_scrollbar.set)
+    task_listbox = tk.Listbox(
+        all_tasks_frame, width=50, height=15, yscrollcommand=task_scrollbar.set
+    )
     task_scrollbar.config(command=task_listbox.yview)
     task_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     task_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -386,17 +424,21 @@ def manage_delivery():
     date_entry.pack(pady=5)
 
     repeat_var = tk.BooleanVar()
-    repeat_checkbox = tk.Checkbutton(scrollable_frame, text="Repeat Task", variable=repeat_var)
+    repeat_checkbox = tk.Checkbutton(
+        scrollable_frame, text="Repeat Task", variable=repeat_var
+    )
     repeat_checkbox.pack(pady=5)
 
     day_vars = {}
-    days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
     days_label = tk.Label(scrollable_frame, text="Repeat on Days:")
     days_label.pack(pady=5)
     for day in days_of_week:
         day_vars[day] = tk.BooleanVar()
-        day_checkbox = tk.Checkbutton(scrollable_frame, text=day, variable=day_vars[day])
-        day_checkbox.pack(anchor='w')
+        day_checkbox = tk.Checkbutton(
+            scrollable_frame, text=day, variable=day_vars[day]
+        )
+        day_checkbox.pack(anchor="w")
 
     time_label = tk.Label(scrollable_frame, text="Start Time (HH:MM, 24-hour):")
     time_label.pack(pady=5)
@@ -411,7 +453,9 @@ def manage_delivery():
     add_task_button = tk.Button(scrollable_frame, text="Add Task", command=add_task)
     add_task_button.pack(pady=10)
 
-    delete_task_button = tk.Button(scrollable_frame, text="Delete Selected Task(s)", command=delete_task)
+    delete_task_button = tk.Button(
+        scrollable_frame, text="Delete Selected Task(s)", command=delete_task
+    )
     delete_task_button.pack(pady=5)
 
     update_task_list()
@@ -424,27 +468,30 @@ def view_today_schedules():
         today_task_listbox.delete(0, tk.END)
         for task in tasks:
             now = datetime.now()
-            current_day = now.strftime('%A')  # e.g., 'Monday'
+            current_day = now.strftime("%A")  # e.g., 'Monday'
             current_date = now.date()
-            task_date = task['start_date'].date()
+            task_date = task["start_date"].date()
             is_today = False
 
             if current_date >= task_date:
-                if task['is_repeat']:
-                    if current_day in task['days']:
+                if task["is_repeat"]:
+                    if current_day in task["days"]:
                         is_today = True
                 else:
                     if current_date == task_date:
                         is_today = True
 
             if is_today:
-                days_str = ', '.join(task['days']) if task['days'] else 'No days selected'
-                repeat_str = 'Repeats' if task['is_repeat'] else 'One-time'
+                days_str = (
+                    ", ".join(task["days"]) if task["days"] else "No days selected"
+                )
+                repeat_str = "Repeats" if task["is_repeat"] else "One-time"
                 # Use today's date instead of the task's start date
                 task_str = f"{current_date.strftime('%m/%d/%Y')} {task['time']} - {task['endTime']} : {task['description']} [{repeat_str}]"
                 today_task_listbox.insert(tk.END, task_str)
 
         # Create a new window for today's tasks
+
     today_window = tk.Toplevel()
     today_window.title("Today's Delivery Schedules")
     today_window.geometry("450x300")
@@ -459,13 +506,16 @@ def view_today_schedules():
 
     # Scrollbar for Today's Tasks
     today_scrollbar = tk.Scrollbar(today_frame, orient=tk.VERTICAL)
-    today_task_listbox = tk.Listbox(today_frame, width=50, height=10, yscrollcommand=today_scrollbar.set)
+    today_task_listbox = tk.Listbox(
+        today_frame, width=50, height=10, yscrollcommand=today_scrollbar.set
+    )
     today_scrollbar.config(command=today_task_listbox.yview)
     today_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     today_task_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     # Populate today's tasks
     update_today_tasks()
+
 
 # def open_moer_setting():
 
@@ -477,6 +527,7 @@ def view_today_schedules():
 #     current_MOER_label.pack(pady=10)
 
 #     fetch_and_update_MOER_label(current_MOER_label)
+
 
 def open_mode_setting():
     def set_mode():
@@ -500,8 +551,12 @@ def open_mode_setting():
 
     # Mode Selection Radiobuttons
     mode_var = tk.StringVar(value=current_mode)  # Bind variable to radiobuttons
-    rule_based_button = tk.Radiobutton(mode_window, text="Rule-Based", variable=mode_var, value="Rule-Based")
-    optimization_button = tk.Radiobutton(mode_window, text="Optimization", variable=mode_var, value="Optimization")
+    rule_based_button = tk.Radiobutton(
+        mode_window, text="Rule-Based", variable=mode_var, value="Rule-Based"
+    )
+    optimization_button = tk.Radiobutton(
+        mode_window, text="Optimization", variable=mode_var, value="Optimization"
+    )
 
     rule_based_button.pack(anchor="w", padx=20)
     optimization_button.pack(anchor="w", padx=20)
@@ -509,6 +564,7 @@ def open_mode_setting():
     # Save Mode Button
     save_button = tk.Button(mode_window, text="Save", command=set_mode)
     save_button.pack(pady=20)
+
 
 def run_main_gui():
 
@@ -518,27 +574,38 @@ def run_main_gui():
     main_window.title("EMS Settings Panel")
     main_window.geometry("300x250")
 
-
     # open_MOER_button = tk.Button(main_window, text="Current MOER", command=open_moer_setting)
     # open_MOER_button.pack(pady=10)
 
-    open_mode_button = tk.Button(main_window, text="System Mode", command=open_mode_setting)
+    open_mode_button = tk.Button(
+        main_window, text="System Mode", command=open_mode_setting
+    )
     open_mode_button.pack(pady=10)
 
     # Button to open Temperature Setting GUI
-    open_temp_button = tk.Button(main_window, text="Temperature Settings", command=open_temp_setting)
+    open_temp_button = tk.Button(
+        main_window, text="Temperature Settings", command=open_temp_setting
+    )
     open_temp_button.pack(pady=10)
 
     # Button to open Charging Setting GUI
-    open_temp_button = tk.Button(main_window, text="Charging Settings", command=open_charging_setting)
+    open_temp_button = tk.Button(
+        main_window, text="Charging Settings", command=open_charging_setting
+    )
     open_temp_button.pack(pady=10)
 
-    # Button to add delivery schedule 
-    open_delivery_button = tk.Button(main_window, text="Manage Delivery Schedules", command=manage_delivery)
-    open_delivery_button.pack(pady=10) 
+    # Button to add delivery schedule
+    open_delivery_button = tk.Button(
+        main_window, text="Manage Delivery Schedules", command=manage_delivery
+    )
+    open_delivery_button.pack(pady=10)
 
     # New Button to view today's delivery schedules
-    view_today_button = tk.Button(main_window, text="View Today's Delivery Schedules", command=view_today_schedules)
+    view_today_button = tk.Button(
+        main_window,
+        text="View Today's Delivery Schedules",
+        command=view_today_schedules,
+    )
     view_today_button.pack(pady=10)
 
     def on_closing():
@@ -555,37 +622,51 @@ def main_script():
     global tasks  # Ensure we can access the tasks list
     while True:
         now = datetime.now()
-        current_day = now.strftime('%A')  # e.g., 'Monday'
+        current_day = now.strftime("%A")  # e.g., 'Monday'
         current_date = now.date()
-        current_time = now.strftime('%H:%M')
+        current_time = now.strftime("%H:%M")
         save_to_json()
 
         for task in tasks.copy():
-            task_date = task['start_date'].date()
+            task_date = task["start_date"].date()
 
             if current_date >= task_date:
-                if task['is_repeat']:
-                    if current_day in task['days']:
-                        if current_time == task['time']:
-                            last_executed = task.get('last_executed')
+                if task["is_repeat"]:
+                    if current_day in task["days"]:
+                        if current_time == task["time"]:
+                            last_executed = task.get("last_executed")
                             if last_executed != current_date:
-                                print(f"Executing repeating task: {task['description']}")
+                                print(
+                                    f"Executing repeating task: {task['description']}"
+                                )
                                 # Here, you can add the code to perform the actual task
-                                task['last_executed'] = current_date
+                                task["last_executed"] = current_date
                 else:
                     # One-time task
-                    task_datetime = datetime.combine(task_date, datetime.strptime(task['time'], "%H:%M").time())
+                    task_datetime = datetime.combine(
+                        task_date, datetime.strptime(task["time"], "%H:%M").time()
+                    )
                     if now >= task_datetime and now <= task_datetime.replace(second=59):
                         print(f"Executing one-time task: {task['description']}")
                         # Here, you can add the code to perform the actual task
                         tasks.remove(task)
-                        print(f"One-time task '{task['description']}' executed and removed from the list.")
-        
+                        print(
+                            f"One-time task '{task['description']}' executed and removed from the list."
+                        )
 
         time.sleep(5)
 
+
 def save_to_json():
-    global current_charge_setpoint, current_temperature, tmin, tmax, coolth, econ, tolerance_time, current_mode
+    global \
+        current_charge_setpoint, \
+        current_temperature, \
+        tmin, \
+        tmax, \
+        coolth, \
+        econ, \
+        tolerance_time, \
+        current_mode
     config = {
         "current_temperature": current_temperature,
         "tmin": tmin,
@@ -594,14 +675,14 @@ def save_to_json():
         "econ": econ,
         "tolerance_time": tolerance_time,
         "current_mode": current_mode,
-        "current_charge_setpoint": current_charge_setpoint
+        "current_charge_setpoint": current_charge_setpoint,
     }
     # Define the file path
     file_path = "config.json"
-    
+
     if not os.path.exists(file_path):
         print(f"{file_path} does not exist. Creating a new file.")
-    
+
     try:
         # Save to JSON file
         with open(file_path, "w") as json_file:
@@ -609,7 +690,8 @@ def save_to_json():
         # print(f"Configuration saved to {file_path}.")
     except Exception as e:
         print(f"Error saving configuration: {e}")
-    
+
+
 def ui_main():
     global tasks
     tasks = load_tasks_from_csv()
