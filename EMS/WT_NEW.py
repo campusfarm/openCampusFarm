@@ -1,8 +1,6 @@
 # from real_time_ems import get_amount_of_clean_periods
 # import test as test
-import csv
 import json
-import math
 import os
 from datetime import datetime, timedelta
 
@@ -11,7 +9,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytz
 import requests
-from closestDelivery import get_next_delivery, read_schedule_from_csv
 from dotenv import load_dotenv
 from from_root import from_root
 
