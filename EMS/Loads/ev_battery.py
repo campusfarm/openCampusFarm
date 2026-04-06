@@ -42,3 +42,25 @@ def check_battery() -> dict | None:
     except Exception as e:
         print(f"Error fetching EV battery data: {e}")
         return None
+
+
+def set_charging(enabled: bool, uri: str, token: str, vin: str) -> dict:
+    """Turn EV charging on (enabled=True) or off (enabled=False).
+
+    Returns the Home Assistant API response as a dict.
+    """
+    action = "turn_on" if enabled else "turn_off"
+    url = f"{uri}/api/services/switch/{action}"
+    payload = json.dumps({"entity_id": f"switch.fordpass_{vin}_elvehcharge"}).encode()
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": "curl/8.0",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
