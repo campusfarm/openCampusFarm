@@ -45,7 +45,7 @@ def get_access_token() -> Optional[str]:
         result = response.json()["data"]
         cached_token = result["access_token"]
         token_expiry = time.time() + (23 * 3600)
-        print(f"[AUTH] New access token obtained, expires in 23 hours")
+        print("[AUTH] New access token obtained, expires in 23 hours")
         return cached_token
     except Exception as e:
         print(f"[ERROR] Failed to get access token: {e}")
@@ -96,7 +96,9 @@ def fetch_plant_data() -> Optional[Dict[str, float]]:
         raw_data = response.json()
 
         if raw_data.get("code") != 0:
-            print(f"[ERROR] API returned error code: {raw_data.get('code')}, msg: {raw_data.get('msg')}")
+            print(
+                f"[ERROR] API returned error code: {raw_data.get('code')}, msg: {raw_data.get('msg')}"
+            )
             return None
 
         parsed_data = parse_flow_data(raw_data)
