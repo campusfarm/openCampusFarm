@@ -19,7 +19,7 @@ import requests
 from dotenv import load_dotenv
 from from_root import from_root
 
-from Loads.coolbot import change_setpoint
+from Loads.coolbot import change_setpoint, get_room_temp
 from Loads.ev_battery import HA_TOKEN, HA_URI, HA_VIN, check_battery, set_charging
 from solArk_inverter import get_inverter_data
 
@@ -187,6 +187,7 @@ def run_ems_cycle() -> None:
 
     moer         = get_grid_moer()
     outdoor_temp = get_outdoor_temp()
+    room_temp    = _retry(get_room_temp, retries=2, label="CoolBot room temp")
     ev_data      = _retry(check_battery, retries=3, label="Ford EV")
     ev_soc       = ev_data["percentage"] if ev_data else None
 
@@ -195,11 +196,12 @@ def run_ems_cycle() -> None:
     load_w = power["load"]
 
     log.info(
-        "[EMS] %s | PV=%.0fW  Grid=%.0fW  Load=%.0fW  MOER=%s  Outdoor=%s  EV=%s",
+        "[EMS] %s | PV=%.0fW  Grid=%.0fW  Load=%.0fW  MOER=%s  Outdoor=%s  Room=%s  EV=%s",
         datetime.now().strftime("%H:%M:%S"),
         pv_w, grid_w, load_w,
         f"{moer:.0f}" if moer is not None else "N/A",
         f"{outdoor_temp:.1f}°F" if outdoor_temp is not None else "N/A",
+        f"{room_temp:.1f}°F" if room_temp is not None else "N/A",
         f"{ev_soc}%" if ev_soc is not None else "N/A",
     )
 

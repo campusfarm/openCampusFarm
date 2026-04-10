@@ -14,63 +14,28 @@ load_dotenv(from_root(".env"))
 
 # --- Config ---
 BLYNK_URL = "wss://cbws.storeitcold.com/websocket"
-EMAIL = os.environ.get("SIT_EMAIL")
+EMAIL    = os.environ.get("SIT_EMAIL")
 PASSWORD = os.environ.get("SIT_PASSWORD")
 
 # --- Command Codes ---
-CMD_RESPONSE = 0x00
-CMD_LOGIN = 0x02
-CMD_PING = 0x06
-CMD_HARDWARE = 0x14
-CMD_LOAD_PROFILE_GZIPPED = 0x18
+CMD_RESPONSE              = 0x00
+CMD_LOGIN                 = 0x02
+CMD_HARDWARE_CONNECTED    = 0x04  # Server → client: hardware device came online
+CMD_PING                  = 0x06
+CMD_ACTIVATE_DASHBOARD    = 0x07
+CMD_HARDWARE              = 0x14
+CMD_LOAD_PROFILE_GZIPPED  = 0x18
+CMD_APP_SYNC              = 0x19
+CMD_HARDWARE_DISCONNECTED = 0x47  # Server → client: hardware device went offline
 
-CMD_NAMES = {
-    0x00: "RESPONSE",
-    0x01: "REGISTER",
-    0x02: "LOGIN",
-    0x03: "REDEEM",
-    0x04: "HARDWARE_CONNECTED",
-    0x05: "GET_TOKEN",
-    0x06: "PING",
-    0x07: "ACTIVATE_DASHBOARD",
-    0x08: "DEACTIVATE_DASHBOARD",
-    0x09: "REFRESH_TOKEN",
-    0x0A: "GET_GRAPH_DATA",
-    0x0B: "GET_GRAPH_DATA_RESPONSE",
-    0x0E: "NOTIFY",
-    0x10: "HW_SYNC",
-    0x11: "HW_INFO",
-    0x13: "SET_WIDGET_PROPERTY",
-    0x14: "HARDWARE",
-    0x18: "LOAD_PROFILE_GZIPPED",
-    0x19: "APP_SYNC",
-    0x32: "APP_CONNECTED",
-    0x47: "HARDWARE_DISCONNECTED",
-}
-
-STATUS_CODES = {
-    200: "OK",
-    2: "Illegal command",
-    4: "Not authenticated",
-    5: "Not allowed",
-    6: "Device not in network",
-    7: "No active dashboard",
-    8: "Invalid token",
-    9: "Device went offline",
-    11: "Server error",
-    17: "String too long",
-    18: "Not supported",
-    19: "Outdated application",
-}
-
-# Client → server: request full profile
-PING_PACKET = struct.pack(">BHH", CMD_LOAD_PROFILE_GZIPPED, 2, 0)
-
-# Pin assignments
-PIN_SET_TEMP = 4  # setTemp — desired target temperature (°F)
-PIN_FINS_SET_TEMP = 6
-PIN_TOO_COLD = 16
-PIN_TOO_HOT = 12
+# Pin assignments (from message.js pinAssignments)
+PIN_ROOM_TEMP     = 0   # roomTemp  — live sensor reading (not saved, from app_sync)
+PIN_FINS_TEMP     = 1   # finsTemp  — fins sensor reading (not saved)
+PIN_SET_TEMP      = 4   # setTemp   — desired target temperature (°F, saved)
+PIN_FINS_SET_TEMP = 6   # finsSetTemp (saved)
+PIN_TOO_HOT       = 12  # tooHotTemp  (saved)
+PIN_TOO_COLD      = 16  # tooColdTemp (saved)
+PIN_POWER_ON      = 9   # powerOn   — 1 = running, 0 = sleep/off (saved, flag)
 
 
 def hash_password(password: str, email: str) -> str:
@@ -83,18 +48,20 @@ def hash_password(password: str, email: str) -> str:
 def build_login_packet(email: str, msg_id: int = 1) -> bytes:
     body = "\0".join(
         [email, hash_password(PASSWORD, email), "Other", "12220000", "Blynk"]
-    )
-    body_bytes = body.encode()
-    header = struct.pack(">BHH", CMD_LOGIN, msg_id, len(body_bytes))
-    return header + body_bytes
+    ).encode()
+    return struct.pack(">BHH", CMD_LOGIN, msg_id, len(body)) + body
 
 
 def build_hardware_packet(
     dashboard_id: int, device_id: int, pin: int, value, msg_id: int = 3
 ) -> bytes:
     body = f"{dashboard_id}-{device_id}\x00vw\x00{pin}\x00{value}".encode()
-    header = struct.pack(">BHH", CMD_HARDWARE, msg_id, len(body))
-    return header + body
+    return struct.pack(">BHH", CMD_HARDWARE, msg_id, len(body)) + body
+
+
+def build_text_packet(cmd: int, body: str, msg_id: int) -> bytes:
+    body_bytes = body.encode()
+    return struct.pack(">BHH", cmd, msg_id, len(body_bytes)) + body_bytes
 
 
 def build_response_packet(msg_id: int, status: int = 200) -> bytes:
@@ -103,154 +70,242 @@ def build_response_packet(msg_id: int, status: int = 200) -> bytes:
 
 def parse_packet(data: bytes) -> dict:
     if len(data) < 5:
-        return {"error": f"Packet too short ({len(data)} bytes)", "raw": data.hex()}
-
+        return {}
     cmd, msg_id, field = struct.unpack(">BHH", data[:5])
-    cmd_name = CMD_NAMES.get(cmd, f"UNKNOWN(0x{cmd:02X})")
-    result = {"command": cmd, "command_name": cmd_name, "msg_id": msg_id}
-
+    result = {"command": cmd, "msg_id": msg_id}
     if cmd == CMD_RESPONSE:
-        result["status"] = field
-        result["status_text"] = STATUS_CODES.get(field, f"Unknown ({field})")
         result["success"] = field == 200
     elif cmd == CMD_LOAD_PROFILE_GZIPPED:
-        body_bytes = data[5 : 5 + field]
         try:
-            decompressed = zlib.decompress(body_bytes)
-            result["profile"] = json.loads(decompressed)
+            result["profile"] = json.loads(zlib.decompress(data[5:5 + field]))
         except Exception as e:
-            result["body_raw"] = body_bytes.hex()
             result["decompress_error"] = str(e)
     else:
-        body_bytes = data[5 : 5 + field]
-        body_str = body_bytes.decode("utf-8", errors="replace")
-        parts = body_str.split("\0")
-        result["body"] = body_str
+        parts = data[5:5 + field].decode("utf-8", errors="replace").split("\0")
         result["parts"] = parts
-        if cmd == CMD_HARDWARE and len(parts) >= 3:
+        if cmd in (CMD_HARDWARE, CMD_APP_SYNC) and len(parts) >= 3:
             result["device_ref"] = parts[0]
-            result["pin_type"] = parts[1]
-            result["pin"] = parts[2]
-            result["value"] = parts[3:]
-
+            result["pin_type"]   = parts[1]
+            result["pin"]        = parts[2]
+            result["value"]      = parts[3:]
     return result
 
 
 async def blynk_login(ws) -> bool:
-    login_packet = build_login_packet(EMAIL)
-    await ws.send(login_packet)
+    await ws.send(build_login_packet(EMAIL))
     resp = await ws.recv()
-    resp_bytes = resp if isinstance(resp, bytes) else resp.encode()
-    parsed = parse_packet(resp_bytes)
-    return parsed.get("success", False)
+    data = resp if isinstance(resp, bytes) else resp.encode()
+    return parse_packet(data).get("success", False)
 
 
-async def updateCoolbot(temperature: int) -> None:
-    """Connect to the Coolbot via WebSocket, set the target temperature, and disconnect."""
-    async with websockets.connect(BLYNK_URL) as ws:
-        if not await blynk_login(ws):
-            raise RuntimeError("Coolbot login failed")
+class CoolBotClient:
+    """Persistent WebSocket connection to the CoolBot.
 
-        await ws.send(PING_PACKET)
+    Connects once, sends activate_dashboard + app_sync so the server
+    immediately flushes all cached pin values (~20 ms). From that point:
+      - room_temp  (pin 0) is populated instantly and updated on every
+        hardware push (~every 10-15 s)
+      - set_temp_f (pin 4) is populated instantly and updated after writes
+      - set_temp() is a fire-and-forget send with no round-trip
 
-        while True:
-            raw = await ws.recv()
-            data = raw if isinstance(raw, bytes) else raw.encode()
-            parsed = parse_packet(data)
-            cmd = parsed.get("command")
-
-            if cmd == CMD_PING:
-                await ws.send(build_response_packet(parsed["msg_id"], 200))
-
-            elif cmd == CMD_LOAD_PROFILE_GZIPPED:
-                profile = parsed.get("profile")
-                if not profile:
-                    raise RuntimeError(
-                        f"Failed to load profile: {parsed.get('decompress_error')}"
-                    )
-                dashboards = profile.get("dashBoards", [])
-                if not dashboards:
-                    raise RuntimeError("No dashboards found in profile")
-                dashboard_id = dashboards[0]["id"]
-                devices = dashboards[0].get("devices", [])
-                device_id = devices[0]["id"] if devices else 0
-
-                pkt = build_hardware_packet(
-                    dashboard_id, device_id, PIN_SET_TEMP, temperature
-                )
-                await ws.send(pkt)
-                return
-
-
-def change_setpoint(updated_value: int) -> None:
-    """Set the CoolBot target temperature via WebSocket."""
-    try:
-        print(f"Temperature setpoint changed to {updated_value}")
-        asyncio.run(updateCoolbot(updated_value))
-    except Exception as e:
-        print(f"An error occurred in coolbot/change_setpoint function:\n {e}")
-
-
-async def readCoolbot(pin: int = PIN_SET_TEMP) -> float | None:
-    """Fetch the last-written value for a virtual pin from the dashboard's pinsStorage.
-
-    The server caches every vw write in pinsStorage keyed as "{device_id}-v{pin}",
-    so no vr round-trip to the hardware is needed.
+    Usage:
+        async with CoolBotClient() as cb:
+            print(cb.room_temp)    # available immediately after connect
+            await cb.set_temp(41)  # instant
     """
-    async with websockets.connect(BLYNK_URL) as ws:
-        if not await blynk_login(ws):
-            raise RuntimeError("Coolbot login failed")
 
-        await ws.send(PING_PACKET)
+    def __init__(self):
+        self.room_temp:  float | None = None
+        self.set_temp_f: float | None = None
+        self.power_on:   bool  | None = None  # True = running, False = sleep/off
+        self.hw_online:  bool  | None = None  # True = device connected, False = offline
+        self._dashboard_id: int | None = None
+        self._device_id:    int | None = None
+        self._ws = None
+        self._ready = asyncio.Event()
+        self._listen_task: asyncio.Task | None = None
 
+    @property
+    def is_running(self) -> bool | None:
+        """True if the CoolBot is powered on AND the hardware is online."""
+        if self.hw_online is False:
+            return False
+        if self.power_on is None:
+            return None
+        return self.power_on
+
+    async def __aenter__(self):
+        self._ws = await websockets.connect(BLYNK_URL)
+        if not await blynk_login(self._ws):
+            raise RuntimeError("CoolBot login failed")
+
+        # Load profile to get dashboard_id / device_id
+        await self._ws.send(struct.pack(">BHH", CMD_LOAD_PROFILE_GZIPPED, 2, 0))
         while True:
-            raw = await ws.recv()
+            raw  = await self._ws.recv()
             data = raw if isinstance(raw, bytes) else raw.encode()
-            parsed = parse_packet(data)
-            cmd = parsed.get("command")
-
-            if cmd == CMD_PING:
-                await ws.send(build_response_packet(parsed["msg_id"], 200))
-
-            elif cmd == CMD_LOAD_PROFILE_GZIPPED:
-                profile = parsed.get("profile")
-                if not profile:
-                    raise RuntimeError(
-                        f"Failed to load profile: {parsed.get('decompress_error')}"
-                    )
+            p    = parse_packet(data)
+            if p.get("command") == CMD_PING:
+                await self._ws.send(build_response_packet(p["msg_id"]))
+            elif p.get("command") == CMD_LOAD_PROFILE_GZIPPED:
+                profile    = p.get("profile", {})
                 dashboards = profile.get("dashBoards", [])
                 if not dashboards:
-                    raise RuntimeError("No dashboards found in profile")
-                devices = dashboards[0].get("devices", [])
-                device_id = devices[0]["id"] if devices else 0
+                    raise RuntimeError("No dashboards found in CoolBot profile")
+                self._dashboard_id = dashboards[0]["id"]
+                devices            = dashboards[0].get("devices", [])
+                self._device_id    = devices[0]["id"] if devices else 0
 
+                # Seed hw_online from device status in the profile
+                if devices:
+                    self.hw_online = devices[0].get("status", "") == "ONLINE"
+
+                # Seed power_on from pinsStorage (pin 9 is saved)
                 pins_storage = dashboards[0].get("pinsStorage", {})
-                key = f"{device_id}-v{pin}"
-                raw_value = pins_storage.get(key)
-                if raw_value is None:
-                    raise RuntimeError(
-                        f"Pin {pin} not found in pinsStorage (key={key!r})"
-                    )
-                try:
-                    return float(raw_value)
-                except ValueError:
-                    return raw_value
+                raw_power = pins_storage.get(f"{self._device_id}-v{PIN_POWER_ON}")
+                if raw_power is not None:
+                    try:
+                        self.power_on = bool(int(raw_power))
+                    except (ValueError, TypeError):
+                        pass
+                break
+
+        # activate_dashboard + app_sync: server immediately flushes all cached pins
+        await self._ws.send(build_text_packet(CMD_ACTIVATE_DASHBOARD, str(self._dashboard_id), msg_id=3))
+        await self._ws.send(build_text_packet(CMD_APP_SYNC,           str(self._dashboard_id), msg_id=4))
+
+        self._listen_task = asyncio.create_task(self._listen())
+        await self._ready.wait()
+        return self
+
+    async def __aexit__(self, *_):
+        # Force-close the underlying transport to unblock _listen immediately
+        if self._ws:
+            try:
+                self._ws.transport.close()
+            except Exception:
+                pass
+        if self._listen_task:
+            self._listen_task.cancel()
+            try:
+                await self._listen_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    async def _listen(self):
+        async for raw in self._ws:
+            data = raw if isinstance(raw, bytes) else raw.encode()
+            p    = parse_packet(data)
+            cmd  = p.get("command")
+
+            if cmd == CMD_PING:
+                await self._ws.send(build_response_packet(p["msg_id"]))
+
+            elif cmd == CMD_HARDWARE_CONNECTED:
+                self.hw_online = True
+
+            elif cmd == CMD_HARDWARE_DISCONNECTED:
+                self.hw_online = False
+
+            elif cmd in (CMD_APP_SYNC, CMD_HARDWARE):
+                if (p.get("pin_type") == "vw"
+                        and p.get("device_ref") == str(self._dashboard_id)):
+                    pin    = p.get("pin")
+                    values = p.get("value", [])
+                    if values:
+                        if pin == str(PIN_ROOM_TEMP):
+                            self.room_temp = float(values[0])
+                        elif pin == str(PIN_SET_TEMP):
+                            self.set_temp_f = float(values[0])
+                        elif pin == str(PIN_POWER_ON):
+                            self.power_on = bool(int(values[0]))
+
+                if (not self._ready.is_set()
+                        and self.room_temp  is not None
+                        and self.set_temp_f is not None):
+                    self._ready.set()
+
+    async def set_temp(self, temperature: int) -> None:
+        await self._ws.send(
+            build_hardware_packet(self._dashboard_id, self._device_id, PIN_SET_TEMP, temperature)
+        )
 
 
-def get_coolbot_temp() -> float | None:
-    """Read the current CoolBot set temperature via WebSocket."""
+# ── Persistent background client ──────────────────────────────────────────────
+# A single CoolBotClient runs in a dedicated thread with its own event loop.
+# CMD_HARDWARE broadcasts from the device update room_temp every ~10–15 s
+# automatically. The sync wrappers below simply read/write shared state.
+
+import threading
+
+_client: CoolBotClient | None = None
+_loop:   asyncio.AbstractEventLoop | None = None
+_thread: threading.Thread | None = None
+
+
+def _run_loop(loop: asyncio.AbstractEventLoop) -> None:
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
+def _ensure_client() -> CoolBotClient:
+    """Start the background thread and connect the persistent client if not running."""
+    global _client, _loop, _thread
+
+    if _client is not None:
+        return _client
+
+    _loop = asyncio.new_event_loop()
+    _thread = threading.Thread(target=_run_loop, args=(_loop,), daemon=True)
+    _thread.start()
+
+    async def _connect():
+        global _client
+        _client = CoolBotClient()
+        await _client.__aenter__()
+
+    future = asyncio.run_coroutine_threadsafe(_connect(), _loop)
+    future.result(timeout=15)
+    return _client
+
+
+def change_setpoint(temperature: int) -> None:
+    """Set the CoolBot target temperature."""
     try:
-        return asyncio.run(readCoolbot(PIN_SET_TEMP))
+        client = _ensure_client()
+        future = asyncio.run_coroutine_threadsafe(client.set_temp(temperature), _loop)
+        future.result(timeout=10)
+        print(f"[CoolBot] Setpoint → {temperature}°F")
     except Exception as e:
-        print(f"An error occurred in coolbot/get_coolbot_temp function:\n {e}")
+        print(f"[CoolBot] change_setpoint failed: {e}")
+
+
+def get_room_temp() -> float | None:
+    """Return the current CoolBot room temperature in °F.
+
+    Updated automatically every ~10–15 s via CMD_HARDWARE broadcasts from the
+    device — no reconnect needed between calls.
+    """
+    try:
+        return _ensure_client().room_temp
+    except Exception as e:
+        print(f"[CoolBot] get_room_temp failed: {e}")
         return None
 
 
-def get_sensor_temp() -> float:
-    """Read external temperature sensor from EasyLogCloud.
+def get_coolbot_temp() -> float | None:
+    """Return the current CoolBot set temperature in °F."""
+    try:
+        return _ensure_client().set_temp_f
+    except Exception as e:
+        print(f"[CoolBot] get_coolbot_temp failed: {e}")
+        return None
 
-    NOTE: EasyLogCloud integration has been removed along with Selenium.
-    Returns None; callers should handle this gracefully.
-    """
-    print("get_sensor_temp: EasyLogCloud integration not available, returning None")
-    return None
+
+def is_running() -> bool | None:
+    """Return True if the CoolBot is powered on and online, False if off/offline, None if unknown."""
+    try:
+        return _ensure_client().is_running
+    except Exception as e:
+        print(f"[CoolBot] is_running failed: {e}")
+        return None
