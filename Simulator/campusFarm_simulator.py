@@ -56,6 +56,8 @@ class PV:
         # sin function simulation
         # self.P = (self.inv_eff)*(self.max_power/2)* (np.sin(np.pi * t/(self.T_daylight))+1)
         # real-world data simulation
+        # TODO(team): "/ 5" converts power to energy per step, not power; check the CSV units
+        # before battery energy accounting depends on it
         self.P = self.data.at[minute, "Power"] / 5
         return self.P
 
@@ -370,6 +372,40 @@ class EV:
                 self.batt_charge -= self.drive_drained_percentage
 
 
+class Battery:
+    # Stationary battery on the Sol-Ark inverter (Pytes V5), not the EV battery
+    def __init__(
+        self,
+        capacity_Ah,
+        nominal_voltage,
+        charge_current_max,
+        discharge_current_nominal,
+        discharge_current_peak,
+        soc_min,
+        soc_max,
+        soc_init,
+    ):
+        self.capacity_Ah = capacity_Ah
+        self.nominal_voltage = nominal_voltage
+        self.max_charge_power = charge_current_max * nominal_voltage / 1000  # kW
+        self.max_discharge_power = discharge_current_nominal * nominal_voltage / 1000  # kW
+        self.peak_discharge_power = (
+            discharge_current_peak * nominal_voltage / 1000
+        )  # kW, not modeled yet
+        self.soc_min = soc_min  # %
+        self.soc_max = soc_max  # %
+        self.soc = soc_init  # %
+
+    # TODO(team): no round-trip efficiency yet (100% assumed)
+    def charge(self, power_kw):
+        delta_Ah = (power_kw * 1000 / self.nominal_voltage) / 60
+        self.soc += delta_Ah / self.capacity_Ah * 100
+
+    def discharge(self, power_kw):
+        delta_Ah = (power_kw * 1000 / self.nominal_voltage) / 60
+        self.soc -= delta_Ah / self.capacity_Ah * 100
+
+
 if __name__ == "__main__":
     # integrate watt time data
     token = wt.get_login_token()
@@ -382,6 +418,20 @@ if __name__ == "__main__":
     pv = PV(inv_eff=0.96, T_daylight=24, max_power=13.2, data=data)
     ev = EV()  # TODO
     ev.initialize_ev(75, 131, 320, True, 0.9, 0.9, 19.2)
+
+    # Pytes V5: 100Ah, 51.2V, 50A charge, 100A discharge (180A peak, unused)
+    # SOC limits are provisional; soc_init is a placeholder for the start of the day
+    # TODO(team): seed soc_init from the previous day's ending SOC (night->day->night convergence)
+    battery = Battery(
+        capacity_Ah=100,
+        nominal_voltage=51.2,
+        charge_current_max=50,
+        discharge_current_nominal=100,
+        discharge_current_peak=180,
+        soc_min=30,
+        soc_max=90,
+        soc_init=90,
+    )
 
     power_type = PowerState.INIT
 
@@ -432,6 +482,11 @@ if __name__ == "__main__":
     current_temp_min = []
     danger_max = []
     danger_min = []
+    ev_load_axis = []
+    battery_power_axis = []  # kW, charge (+) / discharge (-)
+    battery_soc_axis = []
+    grid_sell_axis = []
+    grid_buy_axis = []
 
     energy_consumed_by_cooler = 0.0
     energy_generated_by_pv = 0.0
@@ -444,6 +499,11 @@ if __name__ == "__main__":
     grid_by_ev = 0.0
     pv_by_ev = 0.0
     pv_by_cooler = 0.0
+
+    battery_energy_charged = 0.0
+    battery_energy_discharged = 0.0
+    grid_sell_energy = 0.0
+    grid_buy_energy = 0.0
 
     for t in range(1440):
         pv.update(t)
@@ -466,6 +526,50 @@ if __name__ == "__main__":
 
         energy_consumed_by_cooler += main_cooler.instant_power() / 60
         energy_generated_by_pv += pv.get_current_power_output() / 60
+
+        # battery dispatch (Sol-Ark: PV -> load -> battery -> grid sell, deficit: battery -> grid)
+        # TODO(team): this runs alongside the existing PV/EV block below, which still decides
+        # ev.next_state from PV vs cooler power only (not battery-aware)
+        # TODO(team): the 19.2 kW EV charger exceeds PV max, so any EV charging minute is a deficit
+        # TODO(team): base_cooler is not in load_now; confirm cooler/EV are on the inverter LOAD terminal
+        # TODO(team): battery reacts in the same minute; EV reacts via next_state (one-minute delay)
+        cooler_load_now = main_cooler.instant_power()
+        ev_load_now = ev.charger_output_pwr_max if ev.state == EVState.CHARGED else 0
+        load_now = cooler_load_now + ev_load_now
+        net = pv.P - load_now
+
+        grid_sell = 0.0
+        grid_buy = 0.0
+        batt_power = 0.0  # kW, charge (+) / discharge (-)
+        if net > 0:
+            if battery.soc < battery.soc_max:
+                batt_power = min(net, battery.max_charge_power)
+                battery.charge(batt_power)
+                grid_sell = net - batt_power
+            else:
+                grid_sell = net
+        else:
+            deficit = -net
+            if battery.soc > battery.soc_min:
+                discharge_power = min(deficit, battery.max_discharge_power)
+                battery.discharge(discharge_power)
+                batt_power = -discharge_power
+                grid_buy = deficit - discharge_power
+            else:
+                grid_buy = deficit
+
+        ev_load_axis.append(ev_load_now)
+        battery_power_axis.append(batt_power)
+        battery_soc_axis.append(battery.soc)
+        grid_sell_axis.append(grid_sell)
+        grid_buy_axis.append(grid_buy)
+
+        if batt_power > 0:
+            battery_energy_charged += batt_power / 60
+        else:
+            battery_energy_discharged += -batt_power / 60
+        grid_sell_energy += grid_sell / 60
+        grid_buy_energy += grid_buy / 60
 
         if pv.state != power_type:
             if power_type == PowerState.COMBO:
@@ -601,25 +705,32 @@ if __name__ == "__main__":
     print(grid_by_cooler)
     print(grid_by_ev)
 
-    plt.subplot(5, 1, 1)
+    print("Total energy charged into battery:", battery_energy_charged)
+    print("Total energy discharged from battery:", battery_energy_discharged)
+    print("Total energy sold to grid:", grid_sell_energy)
+    print("Total energy bought from grid:", grid_buy_energy)
+
+    plt.figure(figsize=(12, 24))
+
+    plt.subplot(10, 1, 1)
     plt.plot(time_axis, temp_axis)
     plt.xlabel("Time/min")
     plt.ylabel("Temp Setpoint")
     plt.title("Temperature Setpoint")
 
-    plt.subplot(5, 1, 2)
+    plt.subplot(10, 1, 2)
     plt.plot(time_axis, batt_axis)
     plt.xlabel("Time/min")
-    plt.ylabel("Battery Charge Percentage")
-    plt.title("Battery Charge Percentage")
+    plt.ylabel("EV Battery Charge Percentage")
+    plt.title("EV Battery Charge Percentage")
 
-    plt.subplot(5, 1, 3)
+    plt.subplot(10, 1, 3)
     plt.plot(time_axis, pv_axis)
     plt.xlabel("Time/min")
     plt.ylabel("PV output")
     plt.title("PV output")
 
-    plt.subplot(5, 1, 4)
+    plt.subplot(10, 1, 4)
     plt.plot(time_axis, cooler_load)
     plt.yticks(np.arange(0, 2.1, 0.5))
     plt.xlabel("Time/min")
@@ -627,7 +738,7 @@ if __name__ == "__main__":
     plt.title("cooler load")
     # plt.show()
 
-    plt.subplot(5, 1, 5)
+    plt.subplot(10, 1, 5)
     plt.plot(time_axis, current_temp)
     plt.plot(time_axis, healthy_max)
     plt.plot(time_axis, healthy_min)
@@ -648,7 +759,40 @@ if __name__ == "__main__":
     # plt.xlabel('Time/hour1')
     plt.ylabel("current cooler temperature")
     plt.title("current cooler temprature")
+
+    plt.subplot(10, 1, 6)
+    plt.plot(time_axis, ev_load_axis)
+    plt.xlabel("Time/min")
+    plt.ylabel("EV load (kW)")
+    plt.title("EV Charging Load")
+
+    plt.subplot(10, 1, 7)
+    plt.plot(time_axis, battery_power_axis)
+    plt.xlabel("Time/min")
+    plt.ylabel("Battery power (kW)")
+    plt.title("Battery Power (charge +, discharge -)")
+
+    plt.subplot(10, 1, 8)
+    plt.plot(time_axis, battery_soc_axis)
+    plt.xlabel("Time/min")
+    plt.ylabel("Battery SOC (%)")
+    plt.title("Battery State of Charge")
+
+    plt.subplot(10, 1, 9)
+    plt.plot(time_axis, grid_sell_axis)
+    plt.xlabel("Time/min")
+    plt.ylabel("Grid sell (kW)")
+    plt.title("Power Sold to Grid")
+
+    plt.subplot(10, 1, 10)
+    plt.plot(time_axis, grid_buy_axis)
+    plt.xlabel("Time/min")
+    plt.ylabel("Grid buy (kW)")
+    plt.title("Power Bought from Grid")
+
+    plt.tight_layout()
     plt.show()
     print("The Day has ended")
     print(f"The final state of charge is {ev.batt_charge}.\n")
+    print(f"The final battery state of charge is {battery.soc}.\n")
     print("Happy Farming!")
