@@ -428,9 +428,9 @@ if __name__ == "__main__":
         charge_current_max=50,
         discharge_current_nominal=100,
         discharge_current_peak=180,
-        soc_min=30,
-        soc_max=90,
-        soc_init=90,
+        soc_min=35,
+        soc_max=100,
+        soc_init=100,
     )
 
     power_type = PowerState.INIT
