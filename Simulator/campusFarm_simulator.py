@@ -592,8 +592,14 @@ if __name__ == "__main__":
                 f"Time: {pv.min_to_real_time(t)}, PV Power: {round(pv.get_current_power_output(), 3)} kW"
             )
 
+        battery_can_discharge = battery.soc > battery.soc_min
+        battery_can_charge = battery.soc < battery.soc_max
+
         if pv.P <= main_cooler.p_consume:
-            if pv.P > 0:
+            # with no PV, treat the battery as a supply until it reaches soc_min
+            # TODO(team): this skips the GRID_SUPPORT branch (including EV grid charging in
+            # clean windows) while the battery can discharge; decide the intended EV behavior
+            if pv.P > 0 or battery_can_discharge:
                 power_type = PowerState.COMBO
             else:
                 power_type = PowerState.GRID_SUPPORT
